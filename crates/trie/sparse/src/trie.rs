@@ -73,7 +73,7 @@ impl<P> SparseTrie<P> {
     }
 
     /// Returns reference to revealed sparse trie if the trie is not blind.
-    pub fn as_revealed_ref(&self) -> Option<&RevealedSparseTrie<P>> {
+    pub const fn as_revealed_ref(&self) -> Option<&RevealedSparseTrie<P>> {
         if let Self::Revealed(revealed) = self {
             Some(revealed)
         } else {
