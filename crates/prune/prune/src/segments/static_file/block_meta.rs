@@ -21,7 +21,7 @@ use std::num::NonZeroUsize;
 use tracing::trace;
 
 /// Number of tables to prune in one step.
-/// 
+///
 /// `BlockBodyIndices`, `BlockOmmers` and `BlockWithdrawals`.
 const TABLES_TO_PRUNE: usize = 3;
 
