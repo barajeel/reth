@@ -306,7 +306,7 @@ where
         thread_pool: Arc<rayon::ThreadPool>,
     ) -> Self
     where
-        F: Fn(StateRootConfig<Factory>, Factory::Provider) -> BPF + Send + Sync + 'static,
+        F: Fn(&StateRootConfig<Factory>, &Factory::Provider) -> BPF + Send + Sync + 'static,
     {
         let (tx, rx) = channel();
         let provider = Arc::new(config.consistent_view.provider_ro().unwrap());
@@ -336,26 +336,23 @@ where
         let tx_internal = self.tx.clone();
         let proof_sequencer = std::mem::take(&mut self.proof_sequencer);
 
-        std::thread::Builder::new()
-            .name("State Root Task".to_string())
-            .spawn(move || {
-                debug!(target: "engine::tree", "Starting state root task");
+        std::thread::Builder::new().name("State Root Task".to_string()).spawn(move || {
+            debug!(target: "engine::tree", "Starting state root task");
 
-                let task = Self {
-                    config,
-                    provider,
-                    rx: self.rx,
-                    tx: tx_internal,
-                    fetched_proof_targets,
-                    proof_sequencer,
-                    sparse_trie,
-                    thread_pool,
-                };
+            let task = Self {
+                config,
+                provider,
+                rx: self.rx,
+                tx: tx_internal,
+                fetched_proof_targets,
+                proof_sequencer,
+                sparse_trie,
+                thread_pool,
+            };
 
-                let result = task.run();
-                let _ = tx.send(result);
-            })
-            .expect("failed to spawn state root thread");
+            let result = task.run();
+            let _ = tx.send(result);
+        });
 
         StateRootHandle::new(rx)
     }
@@ -867,8 +864,8 @@ mod tests {
     use super::*;
     use reth_primitives::{Account as RethAccount, StorageEntry};
     use reth_provider::{
-        providers::ConsistentDbView, test_utils::create_test_provider_factory, DBProvider,
-        DatabaseProvider, HashingWriter,
+        providers::ConsistentDbView, test_utils::create_test_provider_factory, DatabaseProvider,
+        HashingWriter,
     };
     use reth_testing_utils::generators::{self, Rng};
     use reth_trie::{
@@ -1011,8 +1008,8 @@ mod tests {
             let state_sorted = config.state_sorted.clone();
             let prefix_sets = config.prefix_sets.clone();
 
-            let factory_fn = move |_config: StateRootConfig<_>,
-                                   provider: DatabaseProvider<_, _>| {
+            let factory_fn = move |_config: &StateRootConfig<_>,
+                                   provider: &DatabaseProvider<_, _>| {
                 let tx = provider.tx_ref();
 
                 struct OwnedCursorFactories<'a> {
