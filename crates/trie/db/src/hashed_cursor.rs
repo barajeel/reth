@@ -7,24 +7,27 @@ use reth_db_api::{
 use reth_primitives::Account;
 use reth_trie::hashed_cursor::{HashedCursor, HashedCursorFactory, HashedStorageCursor};
 
+extern crate alloc;
+use alloc::sync::Arc;
+
 /// A struct wrapping database transaction that implements [`HashedCursorFactory`].
 #[derive(Debug)]
-pub struct DatabaseHashedCursorFactory<'a, TX>(&'a TX);
+pub struct DatabaseHashedCursorFactory<TX>(Arc<TX>);
 
-impl<TX> Clone for DatabaseHashedCursorFactory<'_, TX> {
+impl<TX> Clone for DatabaseHashedCursorFactory<TX> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        Self(self.0.clone())
     }
 }
 
-impl<'a, TX> DatabaseHashedCursorFactory<'a, TX> {
+impl<TX> DatabaseHashedCursorFactory<TX> {
     /// Create new database hashed cursor factory.
-    pub const fn new(tx: &'a TX) -> Self {
+    pub const fn new(tx: Arc<TX>) -> Self {
         Self(tx)
     }
 }
 
-impl<TX: DbTx> HashedCursorFactory for DatabaseHashedCursorFactory<'_, TX> {
+impl<TX: DbTx> HashedCursorFactory for DatabaseHashedCursorFactory<TX> {
     type AccountCursor = DatabaseHashedAccountCursor<<TX as DbTx>::Cursor<tables::HashedAccounts>>;
     type StorageCursor =
         DatabaseHashedStorageCursor<<TX as DbTx>::DupCursor<tables::HashedStorages>>;

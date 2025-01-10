@@ -14,25 +14,28 @@ use reth_trie::{
     BranchNodeCompact, Nibbles, StorageTrieEntry, StoredNibbles, StoredNibblesSubKey,
 };
 
+extern crate alloc;
+use alloc::sync::Arc;
+
 /// Wrapper struct for database transaction implementing trie cursor factory trait.
 #[derive(Debug)]
-pub struct DatabaseTrieCursorFactory<'a, TX>(&'a TX);
+pub struct DatabaseTrieCursorFactory<TX>(Arc<TX>);
 
-impl<TX> Clone for DatabaseTrieCursorFactory<'_, TX> {
+impl<TX> Clone for DatabaseTrieCursorFactory<TX> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        Self(self.0.clone())
     }
 }
 
-impl<'a, TX> DatabaseTrieCursorFactory<'a, TX> {
+impl<TX> DatabaseTrieCursorFactory<TX> {
     /// Create new [`DatabaseTrieCursorFactory`].
-    pub const fn new(tx: &'a TX) -> Self {
+    pub const fn new(tx: Arc<TX>) -> Self {
         Self(tx)
     }
 }
 
 /// Implementation of the trie cursor factory for a database transaction.
-impl<TX: DbTx> TrieCursorFactory for DatabaseTrieCursorFactory<'_, TX> {
+impl<TX: DbTx> TrieCursorFactory for DatabaseTrieCursorFactory<TX> {
     type AccountTrieCursor = DatabaseAccountTrieCursor<<TX as DbTx>::Cursor<tables::AccountsTrie>>;
     type StorageTrieCursor =
         DatabaseStorageTrieCursor<<TX as DbTx>::DupCursor<tables::StoragesTrie>>;

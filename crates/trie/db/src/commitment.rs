@@ -10,13 +10,13 @@ use reth_trie::{
 /// The `StateCommitment` trait provides associated types for state commitment operations.
 pub trait StateCommitment: std::fmt::Debug + Send + Sync + Unpin + 'static {
     /// The state root type.
-    type StateRoot<'a, TX: DbTx + 'a>: DatabaseStateRoot<'a, TX>;
+    type StateRoot<TX: DbTx>: DatabaseStateRoot<TX>;
     /// The storage root type.
-    type StorageRoot<'a, TX: DbTx + 'a>: DatabaseStorageRoot<'a, TX>;
+    type StorageRoot<TX: DbTx>: DatabaseStorageRoot<TX>;
     /// The state proof type.
-    type StateProof<'a, TX: DbTx + 'a>: DatabaseProof<'a, TX>;
+    type StateProof<TX: DbTx>: DatabaseProof<TX>;
     /// The state witness type.
-    type StateWitness<'a, TX: DbTx + 'a>: DatabaseTrieWitness<'a, TX>;
+    type StateWitness<TX: DbTx>: DatabaseTrieWitness<TX>;
     /// The key hasher type.
     type KeyHasher: KeyHasher;
 }
@@ -27,13 +27,13 @@ pub trait StateCommitment: std::fmt::Debug + Send + Sync + Unpin + 'static {
 pub struct MerklePatriciaTrie;
 
 impl StateCommitment for MerklePatriciaTrie {
-    type StateRoot<'a, TX: DbTx + 'a> =
-        StateRoot<DatabaseTrieCursorFactory<'a, TX>, DatabaseHashedCursorFactory<'a, TX>>;
-    type StorageRoot<'a, TX: DbTx + 'a> =
-        StorageRoot<DatabaseTrieCursorFactory<'a, TX>, DatabaseHashedCursorFactory<'a, TX>>;
-    type StateProof<'a, TX: DbTx + 'a> =
-        Proof<DatabaseTrieCursorFactory<'a, TX>, DatabaseHashedCursorFactory<'a, TX>>;
-    type StateWitness<'a, TX: DbTx + 'a> =
-        TrieWitness<DatabaseTrieCursorFactory<'a, TX>, DatabaseHashedCursorFactory<'a, TX>>;
+    type StateRoot<TX: DbTx> =
+        StateRoot<DatabaseTrieCursorFactory<TX>, DatabaseHashedCursorFactory<TX>>;
+    type StorageRoot<TX: DbTx> =
+        StorageRoot<DatabaseTrieCursorFactory<TX>, DatabaseHashedCursorFactory<TX>>;
+    type StateProof<TX: DbTx> =
+        Proof<DatabaseTrieCursorFactory<TX>, DatabaseHashedCursorFactory<TX>>;
+    type StateWitness<TX: DbTx> =
+        TrieWitness<DatabaseTrieCursorFactory<TX>, DatabaseHashedCursorFactory<TX>>;
     type KeyHasher = KeccakKeyHasher;
 }

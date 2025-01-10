@@ -10,14 +10,17 @@ use reth_trie::{
     StorageMultiProof, TrieInput,
 };
 
+extern crate alloc;
+use alloc::sync::Arc;
+
 /// Extends [`Proof`] with operations specific for working with a database transaction.
-pub trait DatabaseProof<'a, TX> {
+pub trait DatabaseProof<TX> {
     /// Create a new [Proof] from database transaction.
-    fn from_tx(tx: &'a TX) -> Self;
+    fn from_tx(tx: Arc<TX>) -> Self;
 
     /// Generates the state proof for target account based on [`TrieInput`].
     fn overlay_account_proof(
-        tx: &'a TX,
+        tx: Arc<TX>,
         input: TrieInput,
         address: Address,
         slots: &[B256],
@@ -25,31 +28,31 @@ pub trait DatabaseProof<'a, TX> {
 
     /// Generates the state [`MultiProof`] for target hashed account and storage keys.
     fn overlay_multiproof(
-        tx: &'a TX,
+        tx: Arc<TX>,
         input: TrieInput,
         targets: MultiProofTargets,
     ) -> Result<MultiProof, StateProofError>;
 }
 
-impl<'a, TX: DbTx> DatabaseProof<'a, TX>
-    for Proof<DatabaseTrieCursorFactory<'a, TX>, DatabaseHashedCursorFactory<'a, TX>>
+impl<TX: DbTx> DatabaseProof<TX>
+    for Proof<DatabaseTrieCursorFactory<TX>, DatabaseHashedCursorFactory<TX>>
 {
     /// Create a new [Proof] instance from database transaction.
-    fn from_tx(tx: &'a TX) -> Self {
-        Self::new(DatabaseTrieCursorFactory::new(tx), DatabaseHashedCursorFactory::new(tx))
+    fn from_tx(tx: Arc<TX>) -> Self {
+        Self::new(DatabaseTrieCursorFactory::new(tx.clone()), DatabaseHashedCursorFactory::new(tx))
     }
 
     fn overlay_account_proof(
-        tx: &'a TX,
+        tx: Arc<TX>,
         input: TrieInput,
         address: Address,
         slots: &[B256],
     ) -> Result<AccountProof, StateProofError> {
         let nodes_sorted = input.nodes.into_sorted();
         let state_sorted = input.state.into_sorted();
-        Self::from_tx(tx)
+        Self::from_tx(tx.clone())
             .with_trie_cursor_factory(InMemoryTrieCursorFactory::new(
-                DatabaseTrieCursorFactory::new(tx),
+                DatabaseTrieCursorFactory::new(tx.clone()),
                 &nodes_sorted,
             ))
             .with_hashed_cursor_factory(HashedPostStateCursorFactory::new(
@@ -61,15 +64,15 @@ impl<'a, TX: DbTx> DatabaseProof<'a, TX>
     }
 
     fn overlay_multiproof(
-        tx: &'a TX,
+        tx: Arc<TX>,
         input: TrieInput,
         targets: MultiProofTargets,
     ) -> Result<MultiProof, StateProofError> {
         let nodes_sorted = input.nodes.into_sorted();
         let state_sorted = input.state.into_sorted();
-        Self::from_tx(tx)
+        Self::from_tx(tx.clone())
             .with_trie_cursor_factory(InMemoryTrieCursorFactory::new(
-                DatabaseTrieCursorFactory::new(tx),
+                DatabaseTrieCursorFactory::new(tx.clone()),
                 &nodes_sorted,
             ))
             .with_hashed_cursor_factory(HashedPostStateCursorFactory::new(
@@ -82,13 +85,13 @@ impl<'a, TX: DbTx> DatabaseProof<'a, TX>
 }
 
 /// Extends [`StorageProof`] with operations specific for working with a database transaction.
-pub trait DatabaseStorageProof<'a, TX> {
+pub trait DatabaseStorageProof<TX> {
     /// Create a new [`StorageProof`] from database transaction and account address.
-    fn from_tx(tx: &'a TX, address: Address) -> Self;
+    fn from_tx(tx: Arc<TX>, address: Address) -> Self;
 
     /// Generates the storage proof for target slot based on [`TrieInput`].
     fn overlay_storage_proof(
-        tx: &'a TX,
+        tx: Arc<TX>,
         address: Address,
         slot: B256,
         storage: HashedStorage,
@@ -96,22 +99,26 @@ pub trait DatabaseStorageProof<'a, TX> {
 
     /// Generates the storage multiproof for target slots based on [`TrieInput`].
     fn overlay_storage_multiproof(
-        tx: &'a TX,
+        tx: Arc<TX>,
         address: Address,
         slots: &[B256],
         storage: HashedStorage,
     ) -> Result<StorageMultiProof, StateProofError>;
 }
 
-impl<'a, TX: DbTx> DatabaseStorageProof<'a, TX>
-    for StorageProof<DatabaseTrieCursorFactory<'a, TX>, DatabaseHashedCursorFactory<'a, TX>>
+impl<TX: DbTx> DatabaseStorageProof<TX>
+    for StorageProof<DatabaseTrieCursorFactory<TX>, DatabaseHashedCursorFactory<TX>>
 {
-    fn from_tx(tx: &'a TX, address: Address) -> Self {
-        Self::new(DatabaseTrieCursorFactory::new(tx), DatabaseHashedCursorFactory::new(tx), address)
+    fn from_tx(tx: Arc<TX>, address: Address) -> Self {
+        Self::new(
+            DatabaseTrieCursorFactory::new(tx.clone()),
+            DatabaseHashedCursorFactory::new(tx),
+            address,
+        )
     }
 
     fn overlay_storage_proof(
-        tx: &'a TX,
+        tx: Arc<TX>,
         address: Address,
         slot: B256,
         storage: HashedStorage,
@@ -122,7 +129,7 @@ impl<'a, TX: DbTx> DatabaseStorageProof<'a, TX>
             Default::default(),
             HashMap::from_iter([(hashed_address, storage.into_sorted())]),
         );
-        Self::from_tx(tx, address)
+        Self::from_tx(tx.clone(), address)
             .with_hashed_cursor_factory(HashedPostStateCursorFactory::new(
                 DatabaseHashedCursorFactory::new(tx),
                 &state_sorted,
@@ -132,7 +139,7 @@ impl<'a, TX: DbTx> DatabaseStorageProof<'a, TX>
     }
 
     fn overlay_storage_multiproof(
-        tx: &'a TX,
+        tx: Arc<TX>,
         address: Address,
         slots: &[B256],
         storage: HashedStorage,
@@ -144,7 +151,7 @@ impl<'a, TX: DbTx> DatabaseStorageProof<'a, TX>
             Default::default(),
             HashMap::from_iter([(hashed_address, storage.into_sorted())]),
         );
-        Self::from_tx(tx, address)
+        Self::from_tx(tx.clone(), address)
             .with_hashed_cursor_factory(HashedPostStateCursorFactory::new(
                 DatabaseHashedCursorFactory::new(tx),
                 &state_sorted,

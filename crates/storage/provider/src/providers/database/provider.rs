@@ -136,7 +136,7 @@ impl<DB: Database, N: NodeTypes> From<DatabaseProviderRW<DB, N>>
 #[derive(Debug)]
 pub struct DatabaseProvider<TX, N: NodeTypes> {
     /// Database transaction.
-    tx: TX,
+    tx: Arc<TX>,
     /// Chain spec
     chain_spec: Arc<N::ChainSpec>,
     /// Static File provider
@@ -234,14 +234,14 @@ impl<TX: Send + Sync, N: NodeTypes<ChainSpec: EthChainSpec + 'static>> ChainSpec
 
 impl<TX: DbTxMut, N: NodeTypes> DatabaseProvider<TX, N> {
     /// Creates a provider with an inner read-write transaction.
-    pub const fn new_rw(
+    pub fn new_rw(
         tx: TX,
         chain_spec: Arc<N::ChainSpec>,
         static_file_provider: StaticFileProvider<N::Primitives>,
         prune_modes: PruneModes,
         storage: Arc<N::Storage>,
     ) -> Self {
-        Self { tx, chain_spec, static_file_provider, prune_modes, storage }
+        Self { tx: Arc::new(tx), chain_spec, static_file_provider, prune_modes, storage }
     }
 }
 
@@ -311,7 +311,7 @@ impl<TX: DbTx + DbTxMut + 'static, N: NodeTypesForProvider> DatabaseProvider<TX,
             storage_prefix_sets,
             destroyed_accounts,
         };
-        let (new_state_root, trie_updates) = StateRoot::from_tx(&self.tx)
+        let (new_state_root, trie_updates) = StateRoot::from_tx(self.tx.clone())
             .with_prefix_sets(prefix_sets)
             .root_with_updates()
             .map_err(reth_db::DatabaseError::from)?;
@@ -501,19 +501,20 @@ where
 
 impl<TX: DbTx + 'static, N: NodeTypesForProvider> DatabaseProvider<TX, N> {
     /// Creates a provider with an inner read-only transaction.
-    pub const fn new(
+    pub fn new(
         tx: TX,
         chain_spec: Arc<N::ChainSpec>,
         static_file_provider: StaticFileProvider<N::Primitives>,
         prune_modes: PruneModes,
         storage: Arc<N::Storage>,
     ) -> Self {
-        Self { tx, chain_spec, static_file_provider, prune_modes, storage }
+        Self { tx: Arc::new(tx), chain_spec, static_file_provider, prune_modes, storage }
     }
 
     /// Consume `DbTx` or `DbTxMut`.
     pub fn into_tx(self) -> TX {
-        self.tx
+        Arc::into_inner(self.tx)
+            .expect("failed to unwrap Arc, transaction is still in use elsewhere")
     }
 
     /// Pass `DbTx` or `DbTxMut` mutable reference.
@@ -522,7 +523,7 @@ impl<TX: DbTx + 'static, N: NodeTypesForProvider> DatabaseProvider<TX, N> {
     }
 
     /// Pass `DbTx` or `DbTxMut` immutable reference.
-    pub const fn tx_ref(&self) -> &TX {
+    pub fn tx_ref(&self) -> &TX {
         &self.tx
     }
 
@@ -2516,7 +2517,7 @@ impl<TX: DbTxMut + DbTx + 'static, N: NodeTypes> HashingWriter for DatabaseProvi
                     .collect(),
                 destroyed_accounts,
             };
-            let (state_root, trie_updates) = StateRoot::from_tx(&self.tx)
+            let (state_root, trie_updates) = StateRoot::from_tx(self.tx.clone())
                 .with_prefix_sets(prefix_sets)
                 .root_with_updates()
                 .map_err(reth_db::DatabaseError::from)?;
@@ -3128,7 +3129,8 @@ impl<TX: DbTx + 'static, N: NodeTypes + 'static> DBProvider for DatabaseProvider
     }
 
     fn into_tx(self) -> Self::Tx {
-        self.tx
+        Arc::into_inner(self.tx)
+            .expect("failed to unwrap Arc, transaction is still in use elsewhere")
     }
 
     fn prune_modes_ref(&self) -> &PruneModes {

@@ -17,26 +17,29 @@ use reth_trie::{
     KeyHasher, Nibbles,
 };
 
+extern crate alloc;
+use alloc::sync::Arc;
+
 /// A wrapper around a database transaction that loads prefix sets within a given block range.
 #[derive(Debug)]
-pub struct PrefixSetLoader<'a, TX, KH>(&'a TX, PhantomData<KH>);
+pub struct PrefixSetLoader<TX, KH>(Arc<TX>, PhantomData<KH>);
 
-impl<'a, TX, KH> PrefixSetLoader<'a, TX, KH> {
+impl<TX, KH> PrefixSetLoader<TX, KH> {
     /// Create a new loader.
-    pub const fn new(tx: &'a TX) -> Self {
+    pub const fn new(tx: Arc<TX>) -> Self {
         Self(tx, PhantomData)
     }
 }
 
-impl<TX, KH> Deref for PrefixSetLoader<'_, TX, KH> {
+impl<TX, KH> Deref for PrefixSetLoader<TX, KH> {
     type Target = TX;
 
     fn deref(&self) -> &Self::Target {
-        self.0
+        self.0.as_ref()
     }
 }
 
-impl<TX: DbTx, KH: KeyHasher> PrefixSetLoader<'_, TX, KH> {
+impl<TX: DbTx, KH: KeyHasher> PrefixSetLoader<TX, KH> {
     /// Load all account and storage changes for the given block range.
     pub fn load(self, range: RangeInclusive<BlockNumber>) -> Result<TriePrefixSets, DatabaseError> {
         // Initialize prefix sets.
