@@ -259,9 +259,19 @@ fn evm_state_to_hashed_post_state(update: EvmState) -> HashedPostState {
 /// to the tree.
 /// Then it updates relevant leaves according to the result of the transaction.
 #[derive(Debug)]
-pub struct StateRootTask<Factory, BPF: BlindedProviderFactory> {
+pub struct StateRootTask<Factory, BPF: BlindedProviderFactory>
+where
+    Factory: DatabaseProviderFactory<Provider: BlockReader>
+        + StateCommitmentProvider
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+{
     /// Task configuration.
     config: StateRootConfig<Factory>,
+    /// Database provider.
+    provider: Arc<Factory::Provider>,
     /// Receiver for state root related messages.
     rx: Receiver<StateRootMessage<BPF>>,
     /// Sender for state root related messages.
@@ -290,15 +300,21 @@ where
     BPF::StorageNodeProvider: BlindedProvider + Send + Sync + 'static,
 {
     /// Creates a new state root task with the unified message channel
-    pub fn new(
+    pub fn new<F>(
         config: StateRootConfig<Factory>,
-        blinded_provider: BPF,
+        create_blinded_provider: F,
         thread_pool: Arc<rayon::ThreadPool>,
-    ) -> Self {
+    ) -> Self
+    where
+        F: Fn(StateRootConfig<Factory>, Factory::Provider) -> BPF + Send + Sync + 'static,
+    {
         let (tx, rx) = channel();
+        let provider = Arc::new(config.consistent_view.provider_ro().unwrap());
+        let blinded_provider = create_blinded_provider(&config, &provider);
 
         Self {
             config,
+            provider,
             rx,
             tx,
             fetched_proof_targets: Default::default(),
@@ -315,6 +331,7 @@ where
         let config = self.config;
         let fetched_proof_targets = std::mem::take(&mut self.fetched_proof_targets);
         let thread_pool = self.thread_pool.clone();
+        let provider = self.provider.clone();
         let sparse_trie = self.sparse_trie.take();
         let tx_internal = self.tx.clone();
         let proof_sequencer = std::mem::take(&mut self.proof_sequencer);
@@ -326,6 +343,7 @@ where
 
                 let task = Self {
                     config,
+                    provider,
                     rx: self.rx,
                     tx: tx_internal,
                     fetched_proof_targets,
@@ -849,7 +867,8 @@ mod tests {
     use super::*;
     use reth_primitives::{Account as RethAccount, StorageEntry};
     use reth_provider::{
-        providers::ConsistentDbView, test_utils::create_test_provider_factory, HashingWriter,
+        providers::ConsistentDbView, test_utils::create_test_provider_factory, DBProvider,
+        DatabaseProvider, HashingWriter,
     };
     use reth_testing_utils::generators::{self, Rng};
     use reth_trie::{
@@ -978,18 +997,6 @@ mod tests {
             state_sorted: state_sorted.clone(),
             prefix_sets: Arc::new(input.prefix_sets),
         };
-        let provider = config.consistent_view.provider_ro().unwrap();
-        let blinded_provider_factory = ProofBlindedProviderFactory::new(
-            InMemoryTrieCursorFactory::new(
-                DatabaseTrieCursorFactory::new(provider.tx_ref()),
-                &nodes_sorted,
-            ),
-            HashedPostStateCursorFactory::new(
-                DatabaseHashedCursorFactory::new(provider.tx_ref()),
-                &state_sorted,
-            ),
-            config.prefix_sets.clone(),
-        );
         let num_threads =
             std::thread::available_parallelism().map_or(1, |num| (num.get() / 2).max(1));
 
@@ -999,8 +1006,42 @@ mod tests {
             .build()
             .expect("Failed to create proof worker thread pool");
 
-        let task =
-            StateRootTask::new(config, blinded_provider_factory, Arc::new(state_root_task_pool));
+        let task = {
+            let nodes_sorted = config.nodes_sorted.clone();
+            let state_sorted = config.state_sorted.clone();
+            let prefix_sets = config.prefix_sets.clone();
+
+            let factory_fn = move |_config: StateRootConfig<_>,
+                                   provider: DatabaseProvider<_, _>| {
+                let tx = provider.tx_ref();
+
+                struct OwnedCursorFactories<'a> {
+                    trie_cursor:
+                        DatabaseTrieCursorFactory<'a, reth_db::mdbx::tx::Tx<reth_db::mdbx::RO>>,
+                    hashed_cursor:
+                        DatabaseHashedCursorFactory<'a, reth_db::mdbx::tx::Tx<reth_db::mdbx::RO>>,
+                }
+
+                let cursors = OwnedCursorFactories {
+                    trie_cursor: DatabaseTrieCursorFactory::new(tx),
+                    hashed_cursor: DatabaseHashedCursorFactory::new(tx),
+                };
+
+                let trie_cursor_factory =
+                    InMemoryTrieCursorFactory::new(cursors.trie_cursor, &nodes_sorted);
+                let hashed_cursor_factory =
+                    HashedPostStateCursorFactory::new(cursors.hashed_cursor, &state_sorted);
+
+                ProofBlindedProviderFactory::new(
+                    trie_cursor_factory,
+                    hashed_cursor_factory,
+                    prefix_sets.clone(),
+                )
+            };
+
+            StateRootTask::new(config, factory_fn, Arc::new(state_root_task_pool))
+        };
+
         let mut state_hook = task.state_hook();
         let handle = task.spawn();
 
