@@ -1012,22 +1012,13 @@ mod tests {
                                    provider: &DatabaseProvider<_, _>| {
                 let tx = provider.tx_ref();
 
-                struct OwnedCursorFactories<'a> {
-                    trie_cursor:
-                        DatabaseTrieCursorFactory<'a, reth_db::mdbx::tx::Tx<reth_db::mdbx::RO>>,
-                    hashed_cursor:
-                        DatabaseHashedCursorFactory<'a, reth_db::mdbx::tx::Tx<reth_db::mdbx::RO>>,
-                }
-
-                let cursors = OwnedCursorFactories {
-                    trie_cursor: DatabaseTrieCursorFactory::new(tx),
-                    hashed_cursor: DatabaseHashedCursorFactory::new(tx),
-                };
+                let trie_cursor = DatabaseTrieCursorFactory::new(tx);
+                let hashed_cursor = DatabaseHashedCursorFactory::new(tx);
 
                 let trie_cursor_factory =
-                    InMemoryTrieCursorFactory::new(cursors.trie_cursor, &nodes_sorted);
+                    InMemoryTrieCursorFactory::new(trie_cursor, &nodes_sorted);
                 let hashed_cursor_factory =
-                    HashedPostStateCursorFactory::new(cursors.hashed_cursor, &state_sorted);
+                    HashedPostStateCursorFactory::new(hashed_cursor, &state_sorted);
 
                 ProofBlindedProviderFactory::new(
                     trie_cursor_factory,
